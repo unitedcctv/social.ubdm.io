@@ -1,0 +1,80 @@
+services:
+  redis:
+    restart: unless-stopped
+    image: redis:7-alpine
+    networks:
+      - default
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+    volumes:
+      - ./redis:/data
+
+  web:
+    image: tootsuite/mastodon
+    restart: unless-stopped
+    env_file: .env.production
+    command: bash -c "rm -f /mastodon/tmp/pids/server.pid; bundle exec rails s -p 3000"
+    networks:
+      - traefik-public
+      - default
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q --spider --proxy=off localhost:3000/health || exit 1']
+    depends_on:
+      - redis
+    volumes:
+      - ./public/system:/mastodon/public/system
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+      - traefik.constraint-label=traefik-public
+      - traefik.http.routers.${STACK_NAME?Variable not set}-mastodon-http.rule=Host(`${DOMAIN?Variable not set}`)
+      - traefik.http.routers.${STACK_NAME?Variable not set}-mastodon-http.entrypoints=http
+      - traefik.http.routers.${STACK_NAME?Variable not set}-mastodon-http.middlewares=https-redirect
+      - traefik.http.routers.${STACK_NAME?Variable not set}-mastodon-https.rule=Host(`${DOMAIN?Variable not set}`)
+      - traefik.http.routers.${STACK_NAME?Variable not set}-mastodon-https.entrypoints=https
+      - traefik.http.routers.${STACK_NAME?Variable not set}-mastodon-https.tls=true
+      - traefik.http.routers.${STACK_NAME?Variable not set}-mastodon-https.tls.certresolver=le
+      - traefik.http.services.${STACK_NAME?Variable not set}-mastodon.loadbalancer.server.port=3000
+
+  streaming:
+    image: tootsuite/mastodon
+    restart: unless-stopped
+    env_file: .env.production
+    command: node ./streaming
+    networks:
+      - default
+      - traefik-public
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q --spider --proxy=off localhost:4000/api/v1/streaming/health || exit 1']
+    depends_on:
+      - redis
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+      - traefik.constraint-label=traefik-public
+      - traefik.http.routers.${STACK_NAME?Variable not set}-streaming-http.rule=Host(`${DOMAIN?Variable not set}`) && PathPrefix(`/api/v1/streaming`)
+      - traefik.http.routers.${STACK_NAME?Variable not set}-streaming-http.entrypoints=http
+      - traefik.http.routers.${STACK_NAME?Variable not set}-streaming-http.middlewares=https-redirect
+      - traefik.http.routers.${STACK_NAME?Variable not set}-streaming-https.rule=Host(`${DOMAIN?Variable not set}`) && PathPrefix(`/api/v1/streaming`)
+      - traefik.http.routers.${STACK_NAME?Variable not set}-streaming-https.entrypoints=https
+      - traefik.http.routers.${STACK_NAME?Variable not set}-streaming-https.tls=true
+      - traefik.http.routers.${STACK_NAME?Variable not set}-streaming-https.tls.certresolver=le
+      - traefik.http.services.${STACK_NAME?Variable not set}-streaming.loadbalancer.server.port=4000
+
+  sidekiq:
+    image: tootsuite/mastodon
+    restart: unless-stopped
+    env_file: .env.production
+    command: bundle exec sidekiq
+    depends_on:
+      - redis
+    networks:
+      - default
+    volumes:
+      - ./public/system:/mastodon/public/system
+    healthcheck:
+      test: ['CMD-SHELL', "ps aux | grep '[s]idekiq\ 6' || false"]
+
+networks:
+  traefik-public:
+    external: true
