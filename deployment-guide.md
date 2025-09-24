@@ -39,7 +39,7 @@ Key local settings:
 Run the Mastodon setup wizard (override file is automatically loaded):
 
 ```bash
-docker compose run --rm web bundle exec rake mastodon:setup
+sudo docker compose run --rm web bundle exec rake mastodon:setup
 ```
 
 This will:
@@ -53,13 +53,13 @@ This will:
 Start dependencies first (database and Redis):
 
 ```bash
-docker compose --profile deps up -d
+sudo docker compose --profile deps up -d
 ```
 
 Then start all Mastodon services:
 
 ```bash
-docker compose up -d
+sudo docker compose up -d
 ```
 
 ### Step 4: Access Local Instance
@@ -73,13 +73,13 @@ docker compose up -d
 To stop all services:
 
 ```bash
-docker compose down
+sudo docker compose down
 ```
 
 To stop and remove volumes (reset everything):
 
 ```bash
-docker compose down -v
+sudo docker compose down -v
 ```
 
 ---
@@ -126,7 +126,7 @@ LOCAL_DOMAIN=your-domain.com
 Run the Mastodon setup wizard:
 
 ```bash
-docker-compose run --rm web bundle exec rake mastodon:setup
+sudo docker compose run --rm web bundle exec rake mastodon:setup
 ```
 
 ### Step 4: Deploy Services
@@ -134,15 +134,42 @@ docker-compose run --rm web bundle exec rake mastodon:setup
 Start all services:
 
 ```bash
-docker-compose up -d
+sudo docker compose up -d
 ```
 
-### Step 5: Verify Deployment
+### Step 5: Deploy to Production Server
 
-Check that all services are running:
+Use the automated deployment script to deploy your Mastodon configuration:
 
 ```bash
-docker-compose ps
+# From your local development machine
+./scripts/deploy-to-production.sh
+```
+
+**What the deployment script does:**
+- Creates the remote directory structure
+- Copies `docker-compose.yml` to the server
+- Copies `.env.production` as `.env` to the server
+- **Copies `update-mastodon.sh` script** for future updates
+- Sets proper executable permissions
+
+### Step 6: Verify Deployment
+
+SSH to your production server and verify:
+
+```bash
+ssh karl@188.245.225.192
+cd /home/karl/mastodon
+
+# Check that all files are present
+ls -la
+# Should show: docker-compose.yml, .env, update-mastodon.sh
+
+# Start the services
+sudo docker compose up -d
+
+# Check that all services are running
+sudo docker compose ps
 ```
 
 Check Traefik routing:
@@ -237,7 +264,7 @@ lsof -i :4000
 **Database connection issues:**
 ```bash
 # Check if database container is running
-docker-compose -f docker-compose.local.yml ps db
+docker ps | grep ub_staging_stack-db-1
 ```
 
 **Volume mount errors:**
@@ -262,7 +289,37 @@ docker network create traefik-public
 **Database connection issues:**
 ```bash
 # Test database connection
-docker exec -it your_postgres_container psql -U ${POSTGRES_USER} -d mastodon -c "SELECT version();"
+sudo docker exec -it ub_staging_stack-db-1 psql -U postgres -d mastodon -c "SELECT version();"
+```
+
+### Update Script Issues
+
+**Script not executable:**
+```bash
+# Make the update script executable
+chmod +x update-mastodon.sh
+```
+
+**Backup directory not found:**
+```bash
+# Create the backup directory if it doesn't exist
+mkdir -p public/system/backups
+```
+
+**Update script fails during migration:**
+```bash
+# Check migration status
+sudo docker compose run --rm web bundle exec rake db:migrate:status
+
+# Run migrations manually if needed
+sudo docker compose run --rm -e RAILS_ENV=production web bundle exec rails db:migrate
+```
+
+**Asset precompilation fails:**
+```bash
+# Clear assets and try again
+sudo docker compose run --rm -e RAILS_ENV=production web bundle exec rails assets:clobber
+sudo docker compose run --rm -e RAILS_ENV=production web bundle exec rails assets:precompile
 ```
 
 ### Service Health Checks
@@ -270,19 +327,19 @@ docker exec -it your_postgres_container psql -U ${POSTGRES_USER} -d mastodon -c 
 **Check all services:**
 ```bash
 # Local
-docker-compose -f docker-compose.local.yml ps
+sudo docker compose -f docker-compose.local.yml ps
 
 # Production  
-docker-compose ps
+sudo docker compose ps
 ```
 
 **View logs:**
 ```bash
 # Local
-docker-compose -f docker-compose.local.yml logs -f web
+sudo docker compose -f docker-compose.local.yml logs -f web
 
 # Production
-docker-compose logs -f web
+sudo docker compose logs -f web
 ```
 
 ### Performance Optimization
@@ -307,22 +364,102 @@ docker-compose logs -f web
 ## 🔄 Maintenance Commands
 
 ### Database Maintenance
-```bash
-# Backup database
-docker exec your_postgres_container pg_dump -U ${POSTGRES_USER} mastodon > mastodon_backup.sql
 
-# Restore database
-docker exec -i your_postgres_container psql -U ${POSTGRES_USER} mastodon < mastodon_backup.sql
+#### Mastodon Built-in Backup System (Recommended)
+
+```bash
+# Create a complete Mastodon backup (includes database, media files, etc.)
+sudo docker compose run --rm -e RAILS_ENV=production web bundle exec rake mastodon:backup:create
+
+# List available backups
+ls -la public/system/backups/
+
+# Restore from a backup
+sudo docker compose run --rm -e RAILS_ENV=production web bundle exec rake mastodon:backup:restore BACKUP_FILE=backup-20241224-123456.tar.gz
+```
+
+#### Manual Database Backup
+
+```bash
+# Backup database only
+sudo docker exec ub_staging_stack-db-1 pg_dump -U postgres mastodon > mastodon_backup.sql
+
+# Restore database only
+sudo docker exec -i ub_staging_stack-db-1 psql -U postgres mastodon < mastodon_backup.sql
+```
+
+#### Backup Management
+
+The `update-mastodon.sh` script automatically:
+- Creates backups before each update
+- Keeps only the last 5 backups to save disk space
+- Stores backups in `public/system/backups/` with timestamps
+
+**Manual backup cleanup:**
+```bash
+# Remove backups older than 30 days
+find public/system/backups/ -name "*.tar.gz" -mtime +30 -delete
 ```
 
 ### Update Mastodon
+
+#### Automated Update Script (Recommended)
+
+Use the included `update-mastodon.sh` script for safe, automated updates:
+
 ```bash
-# Pull latest images
-docker-compose pull
-
-# Restart services
-docker-compose up -d
-
-# Run database migrations if needed
-docker-compose run --rm web bundle exec rake db:migrate
+# Update to a specific version (e.g., v4.4.5)
+./update-mastodon.sh v4.4.5
 ```
+
+**What the script does:**
+1. **Creates automatic backup** using Mastodon's built-in backup system
+2. **Prunes old backups** (keeps only the last 5 backups)
+3. **Updates docker-compose.yml** with the new version
+4. **Pulls new Docker images**
+5. **Stops current containers** gracefully
+6. **Runs database migrations** automatically
+7. **Precompiles assets** for the new version
+8. **Restarts all services**
+
+**Backup location:** `public/system/backups/`
+
+#### Manual Update Process
+
+If you prefer manual updates:
+
+```bash
+# 1. Create backup first
+sudo docker compose run --rm -e RAILS_ENV=production web bundle exec rake mastodon:backup:create
+
+# 2. Update docker-compose.yml version manually
+# Edit docker-compose.yml and change the image tags
+
+# 3. Pull latest images
+sudo docker compose pull
+
+# 4. Stop services
+sudo docker compose down
+
+# 5. Run database migrations
+sudo docker compose run --rm -e RAILS_ENV=production web bundle exec rails db:migrate
+
+# 6. Precompile assets
+sudo docker compose run --rm -e RAILS_ENV=production web bundle exec rails assets:precompile
+
+# 7. Restart services
+sudo docker compose up -d
+```
+
+
+### Main Traefik Dashboard
+
+Traefik UI: `https://traefik.ubdm.io`
+
+### Production
+
+Adminer: `https://adminer.ubdm.io`
+
+### Staging
+
+Adminer: `https://adminer.staging.ubdm.io`

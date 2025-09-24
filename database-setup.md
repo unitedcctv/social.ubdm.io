@@ -13,17 +13,15 @@ This guide explains how to create a Mastodon database in your existing PostgreSQ
 First, identify your PostgreSQL container name:
 
 ```bash
-docker ps | grep pgvector
+sudo docker ps | grep pgvector
 ```
 
 Look for the container running `pgvector/pgvector:pg12` and note its name.
 
 ## Step 2: Connect to PostgreSQL Container
 
-Replace `YOUR_CONTAINER_NAME` with the actual container name from Step 1:
-
 ```bash
-docker exec -it YOUR_CONTAINER_NAME psql -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+sudo docker exec -it ub_staging_stack-db-1 psql -U postgres -d db
 ```
 
 ## Step 3: Create Mastodon Database
@@ -40,7 +38,7 @@ CREATE DATABASE mastodon;
 If you prefer a single command (replace with your actual values):
 
 ```bash
-docker exec -it YOUR_CONTAINER_NAME psql -U your_postgres_user -c "CREATE DATABASE mastodon;"
+sudo docker exec -it ub_staging_stack-db-1 psql -U postgres -c "CREATE DATABASE mastodon;"
 ```
 
 ## Step 4: Update Environment Variables
@@ -68,7 +66,7 @@ POSTGRES_PORT=5432
 To verify the database was created successfully:
 
 ```bash
-docker exec -it YOUR_CONTAINER_NAME psql -U ${POSTGRES_USER} -c "\l" | grep mastodon
+sudo docker exec -it ub_staging_stack-db-1 psql -U postgres -c "\l" | grep mastodon
 ```
 
 You should see the `mastodon` database listed.
@@ -93,5 +91,5 @@ ALTER USER your_postgres_user CREATEDB;
 ### Connection Issues
 If you can't connect to the database container:
 - Verify the container is running: `docker ps`
-- Check the container logs: `docker logs YOUR_CONTAINER_NAME`
+- Check the container logs: `docker logs ub_staging_stack-db-1`
 - Ensure you're using the correct username and database name from your environment variables
