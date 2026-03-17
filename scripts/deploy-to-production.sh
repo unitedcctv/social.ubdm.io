@@ -5,9 +5,23 @@
 
 set -e
 
-# Configuration
-PRODUCTION_SERVER="karl@188.245.225.192"
-REMOTE_DIR="/home/karl/mastodon"
+# Configuration (gitignored)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_CONF="$SCRIPT_DIR/deploy.conf"
+
+if [[ ! -f "$DEPLOY_CONF" ]]; then
+  echo "ERROR: Missing $DEPLOY_CONF"
+  echo "Create it by copying: $SCRIPT_DIR/deploy.conf.example -> $DEPLOY_CONF"
+  exit 1
+fi
+
+# shellcheck source=/dev/null
+source "$DEPLOY_CONF"
+
+if [[ -z "${PRODUCTION_SERVER:-}" || -z "${REMOTE_DIR:-}" ]]; then
+  echo "ERROR: PRODUCTION_SERVER and REMOTE_DIR must be set in $DEPLOY_CONF"
+  exit 1
+fi
 
 echo "🚀 Deploying Mastodon configuration to production server..."
 
