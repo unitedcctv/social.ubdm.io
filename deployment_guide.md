@@ -158,8 +158,8 @@ Use the automated deployment script to deploy your Mastodon configuration:
 SSH to your production server and verify:
 
 ```bash
-ssh karl@188.245.225.192
-cd /home/karl/mastodon
+ssh user@ipaddress
+cd DIRECTORY_NAME
 
 # Check that all files are present
 ls -la
